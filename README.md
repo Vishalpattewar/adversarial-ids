@@ -245,3 +245,147 @@ Output: Normal (0) / Attack (1)
 - `live_ids.py` requires `sudo` for raw packet capture
 - For WSL testing set `INTERFACE = 'lo'` in `live_ids.py`
 - For real network set `INTERFACE = None` in `live_ids.py`
+
+---
+
+## Running on Kali Linux
+
+### Step 1 — Install System Dependencies
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv git wget libpcap-dev
+```
+
+### Step 2 — Clone Repository
+```bash
+git clone https://github.com/Vishalpattewar/adversarial-ids.git
+cd adversarial-ids
+```
+
+### Step 3 — Create Virtual Environment
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### Step 4 — Install Dependencies
+```bash
+pip install -r requirements.txt
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+### Step 5 — Download NSL-KDD Dataset
+```bash
+mkdir -p data/kdd
+
+wget "https://raw.githubusercontent.com/jmnwong/NSL-KDD-Dataset/master/KDDTrain%2B.txt" \
+     -O data/kdd/KDDTrain+.txt
+
+wget "https://raw.githubusercontent.com/jmnwong/NSL-KDD-Dataset/master/KDDTest%2B.txt" \
+     -O data/kdd/KDDTest+.txt
+```
+
+### Step 6 — Prepare Dataset
+```bash
+python3 prepare_kdd.py
+```
+
+### Step 7 — Run Full Experiment
+```bash
+cd src
+python3 run_experiment.py
+```
+
+### Step 8 — Generate Charts
+```bash
+python3 visualise_results.py
+```
+
+### Step 9 — Find Your Network Interface
+```bash
+# List all network interfaces
+ip addr show
+
+# Common Kali interface names:
+# eth0   → wired connection
+# wlan0  → wireless connection
+# eth1   → second wired adapter
+```
+
+### Step 10 — Set Interface in `live_ids.py`
+
+Open `src/live_ids.py` and find:
+
+```python
+# BEFORE (WSL localhost testing)
+INTERFACE = 'lo'
+
+# AFTER (Kali real network)
+INTERFACE = None     # auto-detect
+# OR specify explicitly
+INTERFACE = 'eth0'   # replace with your interface name
+```
+
+### Step 11 — Run Live IDS on Kali
+```bash
+# Terminal 1 — Start Live Monitor
+cd src
+sudo python3 live_ids.py
+```
+
+### Step 12 — Attack from Second Kali Machine
+```bash
+# Get IP of machine running live_ids.py
+ip addr show eth0 | grep "inet "
+
+# On ATTACKER machine — replace TARGET_IP with above IP
+
+# SYN Flood
+sudo nmap -sS TARGET_IP
+
+# Aggressive port scan
+sudo nmap -sS --min-rate 1000 -p- TARGET_IP
+
+# UDP scan
+sudo nmap -sU TARGET_IP
+
+# SYN flood with hping3
+sudo hping3 -S --flood -V -p 80 TARGET_IP
+
+# ICMP flood
+sudo hping3 -1 --flood TARGET_IP
+
+# HTTP requests
+curl http://TARGET_IP
+```
+
+### Step 13 — Check Alerts
+```bash
+# View live alert log
+tail -f ../results/live_ids_alerts.log
+```
+
+---
+
+## Network Setup for Two Kali Machines
+
+```
+┌─────────────────────┐         ┌─────────────────────┐
+│   Kali Machine 1    │         │   Kali Machine 2    │
+│   (Defender)        │◄────────│   (Attacker)        │
+│                     │  nmap   │                     │
+│   live_ids.py       │  hping3 │   Attack commands   │
+│   Monitoring eth0   │  flood  │                     │
+└─────────────────────┘         └─────────────────────┘
+         │
+         ▼
+  Alerts logged to
+  results/live_ids_alerts.log
+```
+
+### Requirements
+
+- Both machines on same network (same router/switch)
+- Machine 1 running `live_ids.py` with `INTERFACE = None`
+- Machine 2 has target IP of Machine 1
+- `sudo` access on both machines
